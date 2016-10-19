@@ -1,0 +1,94 @@
+# ===============================================
+# Getting data
+# ===============================================
+library(XML)
+
+newData<-function(baseurl, articlerange, filename="masterfile", append=TRUE)
+{
+	n=floor((articlerange-1)/100)+1
+		seq=(n[1]:n[2])*100-99
+		baseurl=paste(baseurl, "&extend=1&vfpref=html&r=", sep='')
+
+		totalreviews=0
+		res2=lapply(seq, function(i) # dont run the for loop yet
+		{
+			mainlink=paste(baseurl, i, sep='');
+				doc=htmlParse(mainlink);
+				nodes_links=getNodeSet(doc, "//a[@class='mrnum']");
+				nodes_items=getNodeSet(doc, "//a[@class='item_status']");
+
+				hasreviews=which(sapply(1:length(nodes_items), function(s) xmlAttrs(nodes_items[[s]])['title']=="Has a Review"));
+      if(length(hasreviews)==0){
+        Sys.sleep(runif(1,40,120));
+        return(NULL);
+      }
+      
+				totalreviews=totalreviews+length(hasreviews);
+				links=paste("http://www.ams.org", sapply(hasreviews, function(s) xmlAttrs(nodes_links[[s]])['href']), sep='');
+
+				rdwait=runif(length(links),20,300);
+			sprintf("delay: %f", sum(rdwait));
+				res=sapply(1:length(links), function(ii){
+						doc=htmlParse(links[ii]);
+
+# get the review
+						src2=getNodeSet(doc, "//div[@class='review']");
+						num=which(names(xmlChildren(src2[[1]]))=="text");
+						temp=sapply(num, function(n) xmlValue(xmlChildren(src2[[1]])[[n]]));
+						src3=paste(temp,collapse='');
+						thereview=gsub("^[\n ]+", ' ', src3);
+						if(thereview==' ') return(' ') # return that the article was empty;
+
+# get the title
+						src=getNodeSet(doc, "//div[@class='headline']");
+						theauthors=unlist(xpathApply(src[[1]], "//div[@class='headline']/a[@href]", xmlValue));
+						theauthors=theauthors[grepl("[[:alpha:] ]+, [[:alpha:] ]+", theauthors)];
+						theauthors=paste(theauthors, collapse=";");
+						thetitle=xpathApply(src[[1]], "//div[@class='headline']/span[@class='title']", xmlValue)[[1]];
+
+						txt=paste(thetitle, "theauthoris", theauthors, "thereviewis", thereview, sep="\n");
+            txt=gsub("[\n'\"]", " ", txt);
+						txt=gsub("(theauthoris)|(thereviewis)", "\n", txt);
+						Sys.sleep(rdwait[ii]);
+						return(txt);
+				})
+		})
+#	res2=gsub("[\n'\"]", " ", texts) # remove newlines and quotes
+#		res2=gsub("(theauthoris)|(thereviewis)", "\n", res2)
+#  res=gsub("[[:punct:]]", ' ', res) # remove punctuation
+	res2=res2[unlist(lapply(res2,length)!=0)] # remove empty list elements;
+  if(length(res2)>0)
+		writeArticle(unlist(res2), filename, append=append);
+
+		sprintf("number of articles with reviews: %i", totalreviews);
+		sprintf("articles: %i-%i on page %i-%i", seq[1], seq[length(seq)], n[1],n[2]);
+		invisible(NULL)
+}
+
+
+# write articles to text file
+# input: vector to go into the file
+# output: nothing, but a file containing the text is created
+writeArticle<-function(articles, filename="masterfile", append=TRUE)
+{
+	if(length(articles)==0)
+	{
+		stop("No nonempty articles in search. Try a better article range, newbie!")
+	}
+  
+  articles=unlist(articles);
+  
+	write(articles[1], filename, ncolumns=length(articles[1]), append=append);
+		write('', filename, append=TRUE) # indicates separation of articles.;
+
+		if(length(articles)>1)
+		{
+			sapply(2:length(articles), function(i)
+					{
+					write(articles[i], filename, append=TRUE, ncolumns=length(articles[[i]]));
+					write('', filename, append=TRUE) # indicates separation of articles.;
+					})
+		}
+	invisible(NULL)
+}
+
